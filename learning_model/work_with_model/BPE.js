@@ -9,21 +9,32 @@
  * 5. 推理分词使用之前保存的规则优先级（按训练合并的顺序先后）。
  */
 
+const END_WORD = '</w>';
+const PAIR_SEP = ',';
+
+function pairKey(a, b) {
+    return `${a}${PAIR_SEP}${b}`;
+}
+
+function splitPairKey(key) {
+    return key.split(PAIR_SEP);
+}
+
 function getStats(vocab) {
     const pairs = new Map();
     for (const item of vocab) {
         const tokens = item.tokens;
         const count = item.count;
         for (let i = 0; i < tokens.length - 1; i++) {
-            const pairKey = tokens[i] + ',' + tokens[i + 1];
-            pairs.set(pairKey, (pairs.get(pairKey) || 0) + count);
+            const key = pairKey(tokens[i], tokens[i + 1]);
+            pairs.set(key, (pairs.get(key) || 0) + count);
         }
     }
     return pairs;
 }
 
 function mergeVocab(pairKey, vocab) {
-    const [p0, p1] = pairKey.split(',');
+    const [p0, p1] = splitPairKey(pairKey);
     const newVocab = [];
     for (const item of vocab) {
         const tokens = item.tokens;
@@ -45,17 +56,25 @@ function mergeVocab(pairKey, vocab) {
 }
 
 function buildBpeVocab(corpus, numMerges) {
+    if (!Array.isArray(corpus)) {
+        throw new TypeError('corpus 必须是字符串数组');
+    }
+    if (!Number.isInteger(numMerges) || numMerges < 0) {
+        throw new TypeError('numMerges 必须是非负整数');
+    }
+
     // 1. 初始化词表：拆分字符序列并加终止符
     const vocabMap = new Map();
-    for (const word of corpus) {
+    for (const rawWord of corpus) {
+        const word = String(rawWord ?? '');
         let w = word.trim();
         if (!w) continue;
-        const key = w.split('').join(',') + ',</w>';
+        const key = w.split('').join(PAIR_SEP) + `${PAIR_SEP}${END_WORD}`;
         vocabMap.set(key, (vocabMap.get(key) || 0) + 1);
     }
 
     let vocab = Array.from(vocabMap.entries()).map(([k, v]) => ({
-        tokens: k.split(','),
+        tokens: k.split(PAIR_SEP),
         count: v
     }));
 
@@ -73,14 +92,16 @@ function buildBpeVocab(corpus, numMerges) {
         let bestPair = null;
         let maxCount = -1;
         for (const [pair, count] of pairs.entries()) {
-            if (count > maxCount) {
+            // 次数并列时使用字典序，保证结果稳定可复现
+            if (count > maxCount || (count === maxCount && (bestPair === null || pair < bestPair))) {
                 maxCount = count;
                 bestPair = pair;
             }
         }
 
         bpeCodes.set(bestPair, i);
-        console.log(`第 ${i + 1} 次合并: ${bestPair.replace(',', ' + ')} -> ${bestPair.replace(',', '')} (频次: ${maxCount})`);
+        const [left, right] = splitPairKey(bestPair);
+        console.log(`第 ${i + 1} 次合并: ${left} + ${right} -> ${left}${right} (频次: ${maxCount})`);
 
         vocab = mergeVocab(bestPair, vocab);
     }
@@ -94,8 +115,11 @@ function buildBpeVocab(corpus, numMerges) {
 
 function encodeWord(word, bpeCodes) {
     if (!word) return [];
+    if (!(bpeCodes instanceof Map)) {
+        throw new TypeError('bpeCodes 必须是 Map');
+    }
 
-    let tokens = word.split('').concat(['</w>']);
+    let tokens = word.split('').concat([END_WORD]);
 
     while (tokens.length > 1) {
         let minRank = Infinity;
@@ -103,12 +127,12 @@ function encodeWord(word, bpeCodes) {
 
         // 找所有相邻组合中 rank 最小的
         for (let i = 0; i < tokens.length - 1; i++) {
-            const pairKey = tokens[i] + ',' + tokens[i + 1];
-            if (bpeCodes.has(pairKey)) {
-                const rank = bpeCodes.get(pairKey);
+            const key = pairKey(tokens[i], tokens[i + 1]);
+            if (bpeCodes.has(key)) {
+                const rank = bpeCodes.get(key);
                 if (rank < minRank) {
                     minRank = rank;
-                    pairToMerge = pairKey;
+                    pairToMerge = key;
                 }
             }
         }
@@ -116,7 +140,7 @@ function encodeWord(word, bpeCodes) {
         if (!pairToMerge) break;
 
         // 执行一次优先级最高的合并
-        const [p0, p1] = pairToMerge.split(',');
+        const [p0, p1] = splitPairKey(pairToMerge);
         const newTokens = [];
         let i = 0;
         while (i < tokens.length) {
@@ -150,6 +174,7 @@ if (require.main === module) {
     const { bpeCodes, vocab } = buildBpeVocab(corpus, 10);
 
     console.log('vocab', vocab);
+    console.log('bpeCodes', bpeCodes);
 
     // 推理测试
     console.log("\n" + "=".repeat(15), "推理：测试新词", "=".repeat(15));
