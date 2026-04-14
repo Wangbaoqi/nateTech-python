@@ -1,0 +1,6 @@
+{
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/learn-gemini-model/.venv/lib/python3.12/site-packages",
+        "${workspaceFolder}/learning_gemini/.venv/lib/python3.12/site-packages"
+    ]
+}
