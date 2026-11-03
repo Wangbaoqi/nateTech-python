@@ -1,0 +1,17 @@
+[project]
+name = "learning-python-daily"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "wangbaoqi", email = "wangbaoqi8839@gmail.com" }
+]
+requires-python = ">=3.15.2"
+dependencies = []
+
+[project.scripts]
+learning-python-daily = "learning_python_daily:main"
+
+[build-system]
+requires = ["uv_build>=0.13.7,<0.14.0"]
+build-backend = "uv_build"
